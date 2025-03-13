@@ -36,11 +36,25 @@
 #wp {
     float: right;
     border: 1px solid;
+    padding: 10px;
+    margin: 10px;
+    border-radius: 5px;
+    transition: all 0.3s ease;
 }
 
 #bp {
     float: left;
     border: 1px solid;
+    padding: 10px;
+    margin: 10px;
+    border-radius: 5px;
+    transition: all 0.3s ease;
+}
+
+.active-player {
+    background-color: #e6f7ff;
+    border: 2px solid #4dabf7 !important;
+    box-shadow: 0 0 10px rgba(77, 171, 247, 0.5);
 }
 
 #bpTime {
@@ -319,6 +333,22 @@ function validFen (fen) {
         // console.log(i);
         // console.log(fenObj[i]);
     }
+    
+    // Update active player indicator based on FEN
+    updateActivePlayer(fen);
+  }
+
+  function updateActivePlayer(fen) {
+    // In FEN notation, the active player is indicated after the board position
+    // Example: "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
+    // where 'w' means white to move, 'b' means black to move
+    const parts = fen.split(' ');
+    // const activeColor = parts.length > 1 ? parts[1] : 'w'; // Default to white if not specified
+    const isWhiteTurn = parts.length > 1 && parts[1] === 'w';  
+    const wpElement = document.getElementById('wp');
+    const bpElement = document.getElementById('bp');   
+    wpElement.classList.toggle('active-player', isWhiteTurn);
+    bpElement.classList.toggle('active-player', !isWhiteTurn);
   }
 
   function main() {

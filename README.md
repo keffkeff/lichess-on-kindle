@@ -5,7 +5,7 @@ It uses XMLHttpRequest API in order to fetch streaming information from lichess 
 
 ## Getting started
 
-In order to display the index.html, you need to install a webserver (e.g. xampp).
+In order to display the index.html, you can run `python -m http.server` in the root directory of this repo and then open the Beta Browser of your kindle and use the IP and port to access index.html.
 
 ## Roadmap
 
