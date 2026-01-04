@@ -121,6 +121,12 @@ var coordinates = [
   "h1", "h2", "h3", "h4", "h5", "h6", "h7", "h8"
 ];
 
+// streaming channel XHR state (only one active at a time)
+var currentChannelXhr = null;
+var channelIdx = 0;
+// track global feed XHR so we can stop it when user selects a specific channel
+var globalFeedXhr = null;
+
 function formatTime(seconds) {
   var minutes = Math.floor(seconds / 60);
   var remainingSeconds = Math.floor(seconds % 60);
@@ -164,26 +170,212 @@ function main() {
   
   oReq.open("GET", "https://lichess.org/api/tv/feed");
   oReq.responseType = "text";
-  oReq.overrideMimeType('text\/plain; charset=x-user-defined');
+  try { oReq.overrideMimeType('text/plain; charset=x-user-defined'); } catch (e) {}
   oReq.send();
+  // keep reference so channel selection can abort this global feed
+  globalFeedXhr = oReq;
   
   oReq.onprogress = function () {
-    var curBoard = parseData(oReq.response, idx);
-    drawBoard(curBoard.d.fen);
-    
-    if (curBoard.t == "featured") {
-      document.getElementById('wpName').innerHTML = curBoard.d.players[0].user.name;
-      document.getElementById('bpName').innerHTML = curBoard.d.players[1].user.name;
+    try {
+      var curBoard = parseData(oReq.response, idx);
+      if (!curBoard) return;
+      if (curBoard.d && curBoard.d.fen) drawBoard(curBoard.d.fen);
+
+      if (curBoard.t == "featured") {
+        if (curBoard.d && curBoard.d.players) {
+          if (curBoard.d.players[0] && curBoard.d.players[0].user) document.getElementById('wpName').innerHTML = curBoard.d.players[0].user.name || '';
+          if (curBoard.d.players[1] && curBoard.d.players[1].user) document.getElementById('bpName').innerHTML = curBoard.d.players[1].user.name || '';
+        }
+      }
+      else {
+        if (curBoard.d) {
+          if (typeof curBoard.d.wc !== 'undefined') document.getElementById('wpTime').innerHTML = formatTime(curBoard.d.wc);
+          if (typeof curBoard.d.bc !== 'undefined') document.getElementById('bpTime').innerHTML = formatTime(curBoard.d.bc);
+        }
+      }
+      idx = event.loaded || oReq.response.length;
+    } catch (e) {
+      // ignore parsing errors from incomplete chunks
     }
-    else {
-      document.getElementById('wpTime').innerHTML = formatTime(curBoard.d.wc);
-      document.getElementById('bpTime').innerHTML = formatTime(curBoard.d.bc);
-    }
-    
-    idx = event.loaded;
   };
 }
 
 window.onload = function() {
+  // start the live feed (keeps drawing board for streaming feed)
   main();
+
+  // fetch available TV channels and render buttons for user to select
+  fetchChannelsXHR();
 };
+
+// Fetch channel list and render dynamic buttons
+// XHR-based channels fetch for older browsers
+function fetchChannelsXHR() {
+  var xhr = new XMLHttpRequest();
+  xhr.open('GET', 'https://lichess.org/api/tv/channels', true);
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4) {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        try {
+          var data = JSON.parse(xhr.responseText);
+          renderChannelButtonsXHR(data);
+        } catch (e) {
+          console.error('Invalid channels JSON', e);
+        }
+      } else {
+        console.error('Failed to load channels', xhr.status);
+      }
+    }
+  };
+  xhr.send();
+}
+
+function renderChannelButtonsXHR(channels) {
+  var container = document.getElementById('new-gb');
+  if (!container) return;
+  // keep existing static buttons for old Kindle browsers: clear extras but keep two
+  container.innerHTML = '';
+
+  // create a button for each channel using traditional DOM API
+  for (var key in channels) {
+    if (!channels.hasOwnProperty(key)) continue;
+    var btn = document.createElement('button');
+    btn.className = 'game-btn';
+    btn.innerText = key;
+    // attach click handler (traditional assignment for compatibility)
+    (function(k, ch, b){
+      b.onclick = function() { selectChannelXHR(k, ch, b); };
+    })(key, channels[key], btn);
+    container.appendChild(btn);
+  }
+}
+
+function selectChannelXHR(name, channelData, btn) {
+  // mark selected (remove 'active' from siblings)
+  var container = document.getElementById('new-gb');
+  var children = container.childNodes;
+  for (var i = 0; i < children.length; i++) {
+    var c = children[i];
+    if (c && c.className && c.className.indexOf('game-btn') !== -1) {
+      c.className = c.className.replace(/(?:^|\s)active(?!\S)/g, '');
+    }
+  }
+  btn.className = (btn.className + ' active').trim();
+
+  var user = channelData.user || {};
+  var wpNameEl = document.getElementById('wpName');
+  var bpNameEl = document.getElementById('bpName');
+  wpNameEl.innerText = (user.name || '') + (user.title ? ' (' + user.title + ')' : '');
+  bpNameEl.innerText = 'Variant: ' + name + ' — game ' + (channelData.gameId || '');
+
+  // highlight active player according to reported color using className (older browsers)
+  var wp = document.getElementById('wp');
+  var bp = document.getElementById('bp');
+  if (channelData.color === 'white') {
+    if (wp.className.indexOf('active-player') === -1) wp.className += ' active-player';
+    bp.className = bp.className.replace(/(?:^|\s)active-player(?!\S)/g, '');
+  } else {
+    if (bp.className.indexOf('active-player') === -1) bp.className += ' active-player';
+    wp.className = wp.className.replace(/(?:^|\s)active-player(?!\S)/g, '');
+  }
+
+  // start watching the selected channel feed (streaming)
+  watchChannelXHR(name);
+}
+
+function watchChannelXHR(channelName) {
+  // abort previous channel XHR if any
+  try {
+    if (currentChannelXhr) {
+      currentChannelXhr.abort();
+      currentChannelXhr = null;
+    }
+  } catch (e) {}
+
+  // abort the global feed so it doesn't overwrite the selected channel
+  try {
+    if (globalFeedXhr) {
+      globalFeedXhr.abort();
+      globalFeedXhr = null;
+    }
+  } catch (e) {}
+
+  channelIdx = 0;
+  var oReq = new XMLHttpRequest();
+  var url = 'https://lichess.org/api/tv/' + encodeURIComponent(channelName) + '/feed';
+  try { oReq.open('GET', url, true); } catch (e) { console.error('open failed', e); return; }
+  oReq.responseType = 'text';
+  try { oReq.overrideMimeType('text/plain; charset=x-user-defined'); } catch (e) {}
+  oReq.send();
+
+  currentChannelXhr = oReq;
+
+  oReq.onprogress = function () {
+    // parse incremental JSON events like main()
+    try {
+      var curBoard = parseData(oReq.response, channelIdx);
+      if (!curBoard) return;
+      if (curBoard.d && curBoard.d.fen) {
+        drawBoard(curBoard.d.fen);
+      }
+
+      if (curBoard.t == 'featured') {
+        if (curBoard.d && curBoard.d.players) {
+          if (curBoard.d.players[0] && curBoard.d.players[0].user) document.getElementById('wpName').innerHTML = curBoard.d.players[0].user.name || '';
+          if (curBoard.d.players[1] && curBoard.d.players[1].user) document.getElementById('bpName').innerHTML = curBoard.d.players[1].user.name || '';
+        }
+      } else {
+        if (curBoard.d) {
+          if (typeof curBoard.d.wc !== 'undefined') document.getElementById('wpTime').innerHTML = formatTime(curBoard.d.wc);
+          if (typeof curBoard.d.bc !== 'undefined') document.getElementById('bpTime').innerHTML = formatTime(curBoard.d.bc);
+        }
+      }
+
+      // advance index to the amount of text already consumed
+      channelIdx = event.loaded || oReq.response.length;
+    } catch (e) {
+      // ignore parse errors from incomplete chunks
+    }
+  };
+
+  oReq.onerror = function() { console.error('Channel XHR error for', channelName); };
+  oReq.onreadystatechange = function() {
+    if (oReq.readyState === 4 && oReq.status >= 400) {
+      console.error('Channel stream ended with status', oReq.status);
+    }
+  };
+}
+
+function fetchGameFenXHR(gameId) {
+  var xhr = new XMLHttpRequest();
+  // Lichess game export endpoint; request JSON
+  var url = 'https://lichess.org/api/game/export/' + encodeURIComponent(gameId) + '?moves=false&tags=false&clocks=true&players=true';
+  xhr.open('GET', url, true);
+  try { xhr.setRequestHeader('Accept', 'application/json'); } catch (e) {}
+  xhr.onreadystatechange = function() {
+    if (xhr.readyState === 4) {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        var text = xhr.responseText;
+        var parsed = null;
+        try { parsed = JSON.parse(text); } catch (e) { parsed = null; }
+        if (parsed && parsed.fen) {
+          drawBoard(parsed.fen);
+          // update clocks if provided
+          if (parsed.wtime != null) document.getElementById('wpTime').innerText = formatTime(Math.floor(parsed.wtime/1000));
+          if (parsed.btime != null) document.getElementById('bpTime').innerText = formatTime(Math.floor(parsed.btime/1000));
+        } else {
+          // try to find FEN inside the response text (fallback)
+          var m = text.match(/FEN: (\S+)/);
+          if (m && m[1]) {
+            drawBoard(m[1]);
+          } else {
+            console.error('No fen found in game export for', gameId);
+          }
+        }
+      } else {
+        console.error('Failed to fetch game export', xhr.status);
+      }
+    }
+  };
+  xhr.send();
+}
