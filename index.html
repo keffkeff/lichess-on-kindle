@@ -186,6 +186,38 @@
         <button id="standard-btn" class="game-btn">standard</button>
         <button id="bullet-btn" class="game-btn">bullet</button>
     </div>
+    <div id="ai-game-container" style="margin-top: 20px; text-align: center;">
+        <button id="new-game-btn" style="padding: 10px 20px; font-size: 1.2em; margin: 10px;">New Game vs AI</button>
+        <div id="ai-options" style="display: none; margin: 10px;">
+            <div style="margin: 10px 0;">
+                <label for="ai-level">AI Level (1-8): </label>
+                <select id="ai-level">
+                    <option value="1">1 (Easiest)</option>
+                    <option value="2">2</option>
+                    <option value="3" selected>3</option>
+                    <option value="4">4</option>
+                    <option value="5">5</option>
+                    <option value="6">6</option>
+                    <option value="7">7</option>
+                    <option value="8">8 (Hardest)</option>
+                </select>
+            </div>
+            <div style="margin: 10px 0;">
+                <label for="player-color">Play as: </label>
+                <select id="player-color">
+                    <option value="white" selected>White</option>
+                    <option value="black">Black</option>
+                    <option value="random">Random</option>
+                </select>
+            </div>
+            <button id="start-ai-game" style="padding: 8px 16px;">Start Game</button>
+            <button id="cancel-ai-game" style="padding: 8px 16px; margin-left: 10px;">Cancel</button>
+        </div>
+        <div id="game-controls" style="display: none; margin: 10px;">
+            <button id="resign-game" style="padding: 8px 16px;">Resign Game</button>
+        </div>
+        <div id="game-message" style="margin: 10px; font-weight: bold;"></div>
+    </div>
 </div>
 
 </body>
