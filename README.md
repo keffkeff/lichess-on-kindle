@@ -11,7 +11,7 @@ In order to display the index.html, you can run `python -m http.server` in the r
 
 - [ ] Add functionality to login and play chess
 - [ ] Add realtime timer countdown (in seconds)
-- [ ] Add ability to switch between chess variants
+- [x] Add ability to switch between chess variants
 
 ## License
 
